@@ -1,17 +1,17 @@
 name: Sync Releases from Upstream
 
 on:
-  workflow_dispatch:      # 手动触发
+  workflow_dispatch:
     inputs:
       upstream_repo:
-        description: 'X1a0He/X1a0HeWeChatPlugin'
+        description: '上游仓库 (格式: owner/repo)'
         required: true
         default: 'X1a0He/X1a0HeWeChatPlugin'
   schedule:
-    - cron: '0 3 * * *'   # 可选：每天凌晨3点自动同步一次
+    - cron: '0 3 * * *'
 
 permissions:
-  contents: write         # 需要写权限才能创建 release
+  contents: write
 
 jobs:
   sync-releases:
@@ -26,6 +26,7 @@ jobs:
       - name: Sync tags from upstream
         run: |
           UPSTREAM="${{ github.event.inputs.upstream_repo || 'X1a0He/X1a0HeWeChatPlugin' }}"
+          git remote remove upstream 2>/dev/null || true
           git remote add upstream "https://github.com/${UPSTREAM}.git"
           git fetch upstream --tags
           git push origin --tags
@@ -37,19 +38,19 @@ jobs:
           UPSTREAM="${{ github.event.inputs.upstream_repo || 'X1a0He/X1a0HeWeChatPlugin' }}"
           TARGET="${{ github.repository }}"
 
-          tags=$(gh release list --repo "$UPSTREAM" --limit 1000 | awk '{print $NF}')
+          # 用 --json 拿到真正的 tagName 字段，一行一个
+          tags=$(gh release list --repo "$UPSTREAM" --limit 1000 --json tagName -q '.[].tagName')
 
           for tag in $tags; do
             echo "==> 处理 release: $tag"
 
-            # 如果目标仓库已存在同名 release，跳过
             if gh release view "$tag" --repo "$TARGET" >/dev/null 2>&1; then
               echo "已存在，跳过：$tag"
               continue
             fi
 
             mkdir -p "./assets/$tag"
-            gh release download "$tag" --repo "$UPSTREAM" -D "./assets/$tag" || echo "没有资源文件"
+            gh release download "$tag" --repo "$UPSTREAM" -D "./assets/$tag" || echo "该版本没有附件资源文件"
 
             title=$(gh release view "$tag" --repo "$UPSTREAM" --json name -q '.name')
             gh release view "$tag" --repo "$UPSTREAM" --json body -q '.body' > "./assets/$tag/notes.md"
