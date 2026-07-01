@@ -15,3 +15,37 @@ jobs:
           sync_branches: true    # 开启：同步所有代码分支
           sync_tags: true        # 开启：同步所有版本标签
           sync_releases: true    # 开启：同步所有Release+二进制附件
+
+
+
+name: 同步所有Release与附件
+on:
+  workflow_dispatch:
+
+jobs:
+  sync_releases:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 同步上游全部Release+Assets
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.TOKEN }}
+          additional approvers: ""
+      - name: 批量同步Release
+        env:
+          source_repo: X1a0He/X1a0HeWeChatPlugin
+          target_repo: klacee/X1a0HeWeChatPlugin
+          GH_TOKEN: ${{ secrets.UPSTREAM_TOKEN }}
+        run: |
+          gh api -H "Accept: application/vnd.github+json" /repos/$SOURCE_REPO/releases | jq -r '.[] | .tag_name' | while read tag; do
+            gh release view -R $SOURCE_REPO $tag --json body,name,prerelease,draft,assets | jq -r '. | @json' > release.json
+            BODY=$(jq -r '.body' release.json)
+            NAME=$(jq -r '.name' release.json)
+            PRERELEASE=$(jq -r '.prerelease' release.json)
+            DRAFT=$(jq -r '.draft' release.json)
+            gh release create -R $TARGET_REPO $tag --title "$NAME" --notes "$BODY" --prerelease $PRERELEASE --draft $DRAFT || true
+            gh api -H "Accept: application/vnd.github+json" /repos/$SOURCE_REPO/releases/tags/$tag/assets | jq -r '.[].browser_download_url' | while read url; do
+              wget -q "$url" -O "${url##*/}"
+              gh release upload -R $TARGET_REPO $tag "${url##*/}" --clobber || true
+            done
+          done
